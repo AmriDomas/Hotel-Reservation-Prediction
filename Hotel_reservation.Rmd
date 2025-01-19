@@ -1,0 +1,518 @@
+---
+title: "Hotel Reservation Prediction"
+author: "Muh Amri Sidiq"
+date: "`r Sys.Date()`"
+output:   
+  html_document:
+    theme: "journal"
+    highlight: espresso
+    toc: true
+    toc_float:
+      collapsed: true
+    df_print: paged
+---
+
+```{r setup, include=FALSE}
+# clear-up the environment
+rm(list = ls())
+
+# chunk options
+knitr::opts_chunk$set(
+  message = FALSE,
+  warning = FALSE,
+  fig.align = "center",
+  comment = "#>"
+)
+
+options(scipen = 999)
+```
+
+# Introduction
+
+The hotel industry thrives on understanding customer behavior, optimizing reservations, and forecasting demand. In this portfolio, I present a comprehensive analysis of hotel reservation data using R programming to derive valuable insights and build predictive models.
+
+Objectives:
+ - Analyze key metrics like booking trends, cancellation rates, and customer preferences.
+ - Visualize reservation data to identify patterns across seasons, room types, and customer demographics.
+ - Build predictive models to forecast future bookings and cancellations.
+ - Optimize operational strategies for enhancing customer satisfaction and revenue generation.
+
+Tools and Techniques:
+This project leverages powerful R libraries such as ggplot2 for data visualization, dplyr for data manipulation, and caret or xgboost for machine learning models. Advanced statistical techniques and machine learning algorithms, such as decision trees and logistic regression, are applied to ensure accurate predictions and actionable insights.
+
+Through this portfolio, I demonstrate my expertise in data science and R programming, showcasing how data-driven decisions can improve operational efficiency and customer experiences in the hotel industry.
+
+# Library
+
+```{r}
+library(dplyr)
+library(caret)
+library(e1071)
+library(ROCR)
+library(partykit)
+library(rsample)
+library(xgboost)
+library(lubridate)
+library(randomForest)
+```
+
+# Read Data & Understanding
+
+## Import Data
+
+```{r}
+hotel <- read.csv("HotelReservations.csv")
+```
+
+## Data Inspection
+
+Let's take a quick look at the data content with the Head() command
+
+```{r}
+head(hotel)
+```
+
+We check the data type with the glimpse() command.
+
+```{r}
+glimpse(hotel)
+```
+
+From the glimps function above, we can see that the data has 36.275 rows and 19 columns. Here is the explanation of the variables:
+
+Data Dictionary
+
+ - `Booking_ID`                           : unique identifier of each booking
+ - `no_of_adults`                         : Number of adults
+ - `no_of_children`                       : Number of Children
+ - `no_of_weekend_nights`                 : Number of weekend nights (Saturday or Sunday) the guest stayed or booked to stay at the hotel
+ - `no_of_week_nights`                    : Number of week nights (Monday to Friday) the guest stayed or booked to stay at the hotel
+ - `type_of_meal_plan`                    : Type of meal plan booked by the customer:
+ - `required_car_parking_space`           : Does the customer require a car parking space? (0 - No, 1- Yes)
+ - `room_type_reserved`                   : Type of room reserved by the customer. The values are ciphered (encoded) by INN Hotels.
+ - `lead_time`                            : Number of days between the date of booking and the arrival date
+ - `arrival_year`                         : Year of arrival date
+ - `arrival_month`                        : Month of arrival date
+ - `arrival_date`                         : Date of the month
+ - `market_segment_type`                  : Market segment designation.
+ - `repeated_guest`                       : Is the customer a repeated guest? (0 - No, 1- Yes)
+ - `no_of_previous_cancellations`         : Number of previous bookings that were canceled by the customer prior to the current booking
+ - `no_of_previous_bookings_not_canceled` : Number of previous bookings not canceled by the customer prior to the current booking
+ - `avg_price_per_room`                   : Average price per day of the reservation; prices of the rooms are dynamic. (in euros)
+ - `no_of_special_requests`               : Total number of special requests made by the customer (e.g. high floor, view from the room, etc)
+ - `booking_status`                       : Flag indicating if the booking was canceled or not.
+
+## Data Manipulation
+
+```{r}
+hotel_clean <- hotel %>% 
+  mutate_at(vars(type_of_meal_plan, room_type_reserved, market_segment_type, booking_status), as.factor)
+glimpse(hotel_clean)
+```
+
+Check Missing Values
+
+```{r}
+colSums(is.na(hotel_clean))
+```
+
+No missing values
+
+# Exploratory Data Analyst
+
+Check the distribution/pattern of the data
+
+```{r}
+summary(hotel_clean)
+```
+
+```{r}
+ggplot(hotel_clean, aes(x = no_of_adults, fill = booking_status)) +
+  geom_bar(position = "dodge") +
+  labs(
+    x = "Number of Adults", 
+    y = "Frequency", 
+    title = "Bar Plot of Number of Adults by Booking Status"
+  ) +
+  theme_minimal()+
+  scale_fill_manual(values = c("#B3D9FF", "#FFB3B3"))
+```
+
+Insight: `no_of_adults` with 2 have `booking_status` Canceled highest
+
+
+```{r}
+ggplot(hotel_clean, aes(x = no_of_children, fill = booking_status)) +
+  geom_bar(position = "dodge") +
+  labs(
+    x = "Number of Children", 
+    y = "Frequency", 
+    title = "Bar Plot of Number of Children by Booking Status"
+  ) +
+  theme_minimal()+
+  scale_fill_manual(values = c("#B3D9FF", "#FFB3B3"))
+```
+
+Insight: `no_of_children` with 0 have `booking_status` Canceled highest
+
+
+```{r}
+ggplot(hotel_clean, aes(x = no_of_weekend_nights, fill = booking_status)) +
+  geom_bar(position = "dodge") +
+  labs(
+    x = "Number of Weekend Night", 
+    y = "Frequency", 
+    title = "Bar Plot of Number of Weekend Night by Booking Status"
+  ) +
+  theme_minimal()+
+  scale_fill_manual(values = c("#B3D9FF", "#FFB3B3"))
+```
+
+Insight: `no_of_weekend_nights` with 0 have `booking_status` Canceled highest
+
+```{r}
+ggplot(hotel_clean, aes(x = no_of_week_nights, fill = booking_status)) +
+  geom_bar(position = "dodge") +
+  labs(
+    x = "Number of Week Night", 
+    y = "Frequency", 
+    title = "Bar Plot of Number of Week Night by Booking Status"
+  ) +
+  theme_minimal()+
+  scale_fill_manual(values = c("#B3D9FF", "#FFB3B3"))
+```
+
+Insight: `no_of_week_nights` with 3 have `booking_status` Canceled highest
+
+```{r}
+ggplot(hotel_clean, aes(x = type_of_meal_plan, fill = booking_status)) +
+  geom_bar(position = "dodge") +
+  labs(
+    x = "Type of Meal Plan", 
+    y = "Count", 
+    title = "Bar Plot of Booking Status by Type of Meal Plan"
+  ) +
+  theme_minimal() +
+  scale_fill_manual(values = c("#B3D9FF", "#FFB3B3"))
+```
+
+Insight: `type_of_meal_plan` with Meal Plan 1 have `booking_status` Canceled highest
+
+```{r}
+ggplot(hotel_clean, aes(x = required_car_parking_space, fill = booking_status)) +
+  geom_bar(position = "dodge") +
+  labs(
+    x = "Required Car Parking Space", 
+    y = "Frequency", 
+    title = " Bar Plot Required Car Parking Space by Booking Status"
+  ) +
+  theme_minimal()+
+  scale_fill_manual(values = c("#B3D9FF", "#FFB3B3"))
+```
+
+Insight: `required_car_parking_space` with 0 have `booking_status` Canceled highest
+
+```{r}
+ggplot(hotel_clean, aes(x = room_type_reserved, fill = booking_status)) +
+  geom_bar(position = "dodge") +
+  labs(
+    x = "Room Type Reserved", 
+    y = "Frequency", 
+    title = " Bar Plot Room Type Reserved by Booking Status"
+  ) +
+  theme_minimal()+
+  scale_fill_manual(values = c("#B3D9FF", "#FFB3B3"))
+```
+
+Insight: `room_type_reserved` with Room_type 1 have `booking_status` Canceled highest
+
+```{r}
+ggplot(hotel_clean, aes(x = as.factor(booking_status), y = lead_time)) +
+  geom_boxplot(fill = "#B3D9FF", color = "black") +
+  labs(
+    x = "Booking Status", 
+    y = "Lead Time", 
+    title = "Box Plot of Lead Time by Booking Status"
+  ) +
+  theme_minimal()
+```
+
+Insight: `booking_status` Canceled have mean `lead_time` higher than `booking_status` Not_Canceled, both `booking_status` have outliers
+
+```{r}
+ggplot(hotel_clean, aes(x = arrival_year, fill = booking_status)) +
+  geom_bar(position = "dodge") +
+  labs(
+    x = "Arrival Year", 
+    y = "Frequency", 
+    title = " Bar Plot Arrival Year by Booking Status"
+  ) +
+  theme_minimal()+
+  scale_fill_manual(values = c("#B3D9FF", "#FFB3B3"))
+```
+
+Insight: `arrival_year` 2018 have `booking_status` Canceled higher than other
+
+```{r}
+ggplot(hotel_clean, aes(x = arrival_month, fill = booking_status)) +
+  geom_bar(position = "dodge") +
+  labs(
+    x = "Arrival Month", 
+    y = "Frequency", 
+    title = " Bar Plot Arrival Month by Booking Status"
+  ) +
+  theme_minimal()+
+  scale_fill_manual(values = c("#B3D9FF", "#FFB3B3"))
+```
+
+Insight: `arrival_month` 10 have `booking_status` Canceled higher than other
+
+```{r}
+ggplot(hotel_clean, aes(x = arrival_date, fill = booking_status)) +
+  geom_bar(position = "dodge") +
+  labs(
+    x = "Arrival Date", 
+    y = "Frequency", 
+    title = " Bar Plot Arrival Date by Booking Status"
+  ) +
+  theme_minimal()+
+  scale_fill_manual(values = c("#B3D9FF", "#FFB3B3"))
+```
+
+Insight: `arrival_date` 15 have `booking_status` Canceled higher than other
+
+```{r}
+ggplot(hotel_clean, aes(x = market_segment_type, fill = booking_status)) +
+  geom_bar(position = "dodge") +
+  labs(
+    x = "Market Segment Type", 
+    y = "Frequency", 
+    title = " Bar Plot Market Segment Type by Booking Status"
+  ) +
+  theme_minimal()+
+  scale_fill_manual(values = c("#B3D9FF", "#FFB3B3"))
+```
+
+Insight: `market_segment_type` online have `booking_status` Canceled higher than other
+
+```{r}
+ggplot(hotel_clean, aes(x = repeated_guest, fill = booking_status)) +
+  geom_bar(position = "dodge") +
+  labs(
+    x = "Repeated Guest", 
+    y = "Frequency", 
+    title = " Bar Plot Repeated Guest by Booking Status"
+  ) +
+  theme_minimal()+
+  scale_fill_manual(values = c("#B3D9FF", "#FFB3B3"))
+```
+
+Insight: `repeated_guest` 0 have `booking_status` Canceled higher than other
+
+```{r}
+ggplot(hotel_clean, aes(x = no_of_previous_cancellations, fill = booking_status)) +
+  geom_bar(position = "dodge") +
+  labs(
+    x = "Number Of Previous Cancellations", 
+    y = "Frequency", 
+    title = " Bar Plot Number Of Previous Cancellations by Booking Status"
+  ) +
+  theme_minimal()+
+  scale_fill_manual(values = c("#B3D9FF", "#FFB3B3"))
+```
+
+Insight: `no_of_previous_cancellations` 0 have `booking_status` Canceled higher than other
+
+```{r}
+ggplot(hotel_clean, aes(x = no_of_previous_bookings_not_canceled, fill = booking_status)) +
+  geom_bar(position = "dodge") +
+  labs(
+    x = "Number Of Previous Booking Not Cancellations", 
+    y = "Frequency", 
+    title = " Bar Plot Number Of Previous Booking Not Cancellations by Booking Status"
+  ) +
+  theme_minimal()+
+  scale_fill_manual(values = c("#B3D9FF", "#FFB3B3"))
+```
+
+Insight: `no_of_previous_bookings_not_canceled` 0 have `booking_status` Canceled higher than other
+
+```{r}
+ggplot(hotel_clean, aes(x = as.factor(booking_status), y = avg_price_per_room)) +
+  geom_boxplot(fill = "#B3D9FF", color = "black") +
+  labs(
+    x = "Booking Status", 
+    y = "Average Price Per Room", 
+    title = "Box Plot of Average Price Per Room by Booking Status"
+  ) +
+  theme_minimal()
+```
+
+Insight: `booking_status` Not_Canceled have mean `avg_price_per_room` higher, `booking_status` Canceled have median higher, both `booking_status` have outliers
+
+```{r}
+ggplot(hotel_clean, aes(x = no_of_special_requests, fill = booking_status)) +
+  geom_bar(position = "dodge") +
+  labs(
+    x = "Number Of Special Requests", 
+    y = "Frequency", 
+    title = " Bar Plot Number Of Special Requests by Booking Status"
+  ) +
+  theme_minimal()+
+  scale_fill_manual(values = c("#B3D9FF", "#FFB3B3"))
+```
+
+Insight; `no_of_special_requests` 0 have `booking_status` Canceled Higher than others
+
+
+# Feature Engineering
+
+Feature engineering in R refers to the process of transforming raw data into meaningful features (variables) that can be used to improve the performance of machine learning models. It involves creating, modifying, or selecting variables that better represent the underlying patterns in the data and make it easier for models to learn. Combining `arrival_year`, `arrival_month`, and `arrival_date` into a single `arrival_date_full`. make Day from extract `arrival_date_full`.
+
+```{r}
+hotel_clean$arrival_date_full <- as.Date(
+  paste(hotel_clean$arrival_year, hotel_clean$arrival_month, hotel_clean$arrival_date, sep = "-"))
+
+hotel_clean <- hotel_clean %>% mutate(Day = weekdays(arrival_date_full))
+hotel_clean <- na.omit(hotel_clean)
+```
+
+Combining `no_of_adults` and `no_of_children` into single `total_people`, combining `no_of_weekend_nights` and `no_of_week_nights` into single `total_nights`
+
+```{r}
+hotel_clean <- hotel_clean %>%
+  mutate(total_people = no_of_adults + no_of_children,
+         total_nights = no_of_weekend_nights + no_of_week_nights)
+```
+
+```{r}
+prop.table(table(hotel_clean$Day))
+```
+
+
+change data type
+
+```{r}
+hotel_clean$room_type_reserved <- as.numeric(hotel_clean$room_type_reserved)
+hotel_clean$type_of_meal_plan <- as.numeric(hotel_clean$type_of_meal_plan)
+hotel_clean$market_segment_type <- as.numeric(hotel_clean$market_segment_type)
+hotel_clean$Day <- as.numeric(factor(hotel_clean$Day))
+```
+
+```{r}
+prop.table(table(hotel_clean$Day))
+```
+
+
+```{r}
+colSums(is.na(hotel_clean))
+```
+
+Check all dataset
+```{r}
+glimpse(hotel_clean)
+```
+
+```{r}
+summary(hotel_clean)
+```
+
+
+# Modeling
+
+Before make modeling, we must chose feature column, and we dont use column `Booking_ID` and `arrival_date_full`
+
+```{r}
+hotel_finish <- hotel_clean %>% select(-Booking_ID, -arrival_date_full) %>% mutate(booking_status = as.factor(booking_status))
+```
+
+split data to train and test
+
+```{r warning=FALSE}
+RNGkind(sample.kind = "Rounding")
+set.seed(100)
+
+# your code here
+index_hotel <- sample(nrow(hotel_finish), nrow(hotel_finish)*0.75)
+
+hotel_train <- hotel_finish[index_hotel,] 
+hotel_test <- hotel_finish[-index_hotel,]
+```
+
+Proportional target not balance, but we must try to use modeling
+
+```{r}
+prop.table(table(hotel_train$booking_status))
+```
+
+From above prompt, we can see data not balance, we use up sample to balance target
+
+```{r}
+hotel_train_up <- upSample(
+  x = hotel_train %>% select(-booking_status),
+  y = hotel_train$booking_status,
+  yname = "booking_status"
+)
+```
+
+check again proprtion of target
+
+```{r}
+prop.table(table(hotel_train_up$booking_status))
+```
+
+Target has balance, ready for training model
+
+Random Forest is one of the most popular and powerful machine learning algorithms. It falls under the category of ensemble learning, which means it combines several simpler models (in this case, decision trees) to produce a more accurate and stable model. Create a Random Forest model using hotel_train_up with 5-fold cross validation, then the process is repeated 3 times
+
+```{r}
+set.seed(42)
+
+ctrl <- trainControl(method = "repeatedcv",
+                     number = 5,     
+                     repeats = 3)  
+
+hotel_forest <- train(booking_status ~ .,
+                            data = hotel_train_up,
+                            method = "rf",       
+                            trControl = ctrl)  
+```
+
+In the Bootstrap sampling stage, there is data that is not used in modeling, this is referred to as Out-of-Bag (OOB) data. The Random Forest model will use OOB data as data to evaluate by calculating the error (similar to test data). This error is called OOB error. In the case of classification, OOB error is the percentage of OOB data that is misclassified.
+
+```{r}
+hotel_forest$finalModel
+```
+
+The OOB Error value for the hotel_forest model is 5.33%. In other words, the model accuracy on OOB data is 94.67%.
+
+Although random forest is labeled as an uninterpretable model, at least we can see what predictors are most used (important) in making random forest:
+
+```{r}
+varImp(hotel_forest) %>% plot()
+```
+
+Feature importance highest is `lead_time` and less then is `no_of_previous_cancellations`
+
+# Evaluation
+
+```{r}
+predictions_rf <- predict(hotel_forest, newdata = hotel_test)
+```
+
+```{r}
+conf_matrix_rf <- confusionMatrix(predictions_rf, hotel_test$booking_status, positive = "Canceled")
+conf_matrix_rf
+```
+
+Accuracy Random Forest model is 90.12 % 
+
+# Conclusion
+
+Our positive class is Canceled, which means the customer has cancel booking status hotel, while the negative class is Not_Canceled, which means the customer has not cancel booking status. FP: predicting a customer Canceled, while the customer Cancel booking hotel, the hotel risk is that the hotel incurs a loss. FN: predicting the customer Not_Canceled to Booking Status, even though the customer Not Canceled, the hotel risks losing profits. From the hotel side, the concerning risk is FN so the matrix we use is Recall. From the Random Forest methods above, if we are concerned according to the matrix, we will use Recall of 84.13%
+
+
+# Reference
+
+1. https://www.kaggle.com/datasets/ahsan81/hotel-reservations-classification-dataset
+
